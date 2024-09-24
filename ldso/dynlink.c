@@ -693,7 +693,6 @@ static int verify_elf_magic(const Ehdr* eh) {
 		eh->e_ident[3] == ELFMAG3;
 }
 
-/* Verifies that an elf header's machine and class match the loader */
 static int verify_elf_arch(const Ehdr* eh) {
 	return eh->e_machine == ldso.elfmachine &&
 		eh->e_ident[EI_CLASS] == ldso.elfclass;
