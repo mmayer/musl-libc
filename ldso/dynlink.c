@@ -729,8 +729,6 @@ static void *map_library(int fd, struct dso *dso)
 		goto noexec;
 	if (!verify_elf_magic(eh)) goto noexec;
 	if (!verify_elf_arch(eh)) goto noexec;
-	elf_hdr.e_machine = eh->e_machine;
-	elf_hdr.e_class = eh->e_ident[EI_CLASS];
 	phsize = eh->e_phentsize * eh->e_phnum;
 	if (phsize > sizeof buf - sizeof *eh) {
 		allocated_buf = malloc(phsize);
