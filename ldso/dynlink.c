@@ -58,6 +58,14 @@ struct td_index {
 	struct td_index *next;
 };
 
+/* Subset of ELF header fields we are checking */
+struct elf_check_fields {
+	uint32_t e_flags;
+	uint16_t e_machine;
+	uint8_t e_class;
+	uint8_t e_data;
+};
+
 struct dso {
 #if DL_FDPIC
 	struct fdpic_loadmap *loadmap;
@@ -68,8 +76,6 @@ struct dso {
 	size_t *dynv;
 	struct dso *next, *prev;
 
-	int elfmachine;
-	int elfclass;
 	Phdr *phdr;
 	int phnum;
 	size_t phentsize;
@@ -135,6 +141,7 @@ static size_t *saved_addends, *apply_addends_to;
 
 static struct dso ldso;
 static struct dso *head, *tail, *fini_head, *syms_tail, *lazy_head;
+static struct elf_check_fields elf_fields;
 static char *env_path, *sys_path;
 static unsigned long long gencnt;
 static int runtime;
@@ -694,8 +701,8 @@ static int verify_elf_magic(const Ehdr* eh) {
 }
 
 static int verify_elf_arch(const Ehdr* eh) {
-	return eh->e_machine == ldso.elfmachine &&
-		eh->e_ident[EI_CLASS] == ldso.elfclass;
+	return eh->e_machine == elf_fields.e_machine &&
+		eh->e_ident[EI_CLASS] == elf_fields.e_class;
 }
 
 static void *map_library(int fd, struct dso *dso)
@@ -722,8 +729,8 @@ static void *map_library(int fd, struct dso *dso)
 		goto noexec;
 	if (!verify_elf_magic(eh)) goto noexec;
 	if (!verify_elf_arch(eh)) goto noexec;
-	dso->elfmachine = eh->e_machine;
-	dso->elfclass = eh->e_ident[EI_CLASS];
+	elf_hdr.e_machine = eh->e_machine;
+	elf_hdr.e_class = eh->e_ident[EI_CLASS];
 	phsize = eh->e_phentsize * eh->e_phnum;
 	if (phsize > sizeof buf - sizeof *eh) {
 		allocated_buf = malloc(phsize);
@@ -1774,8 +1781,8 @@ hidden void __dls2(unsigned char *base, size_t *sp)
 	ldso.phnum = ehdr->e_phnum;
 	ldso.phdr = laddr(&ldso, ehdr->e_phoff);
 	ldso.phentsize = ehdr->e_phentsize;
-	ldso.elfmachine = ehdr->e_machine;
-	ldso.elfclass = ehdr->e_ident[EI_CLASS];
+	elf_fields.e_machine = ehdr->e_machine;
+	elf_fields.e_class = ehdr->e_ident[EI_CLASS];
 	search_vec(auxv, &ldso_page_size, AT_PAGESZ);
 	kernel_mapped_dso(&ldso);
 	decode_dyn(&ldso);
