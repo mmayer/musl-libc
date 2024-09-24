@@ -58,6 +58,14 @@ struct td_index {
 	struct td_index *next;
 };
 
+/* Subset of ELF header fields we are checking */
+struct elf_check_fields {
+	uint32_t e_flags;
+	uint16_t e_machine;
+	uint8_t e_class;
+	uint8_t e_data;
+};
+
 struct dso {
 #if DL_FDPIC
 	struct fdpic_loadmap *loadmap;
@@ -133,6 +141,7 @@ static size_t *saved_addends, *apply_addends_to;
 
 static struct dso ldso;
 static struct dso *head, *tail, *fini_head, *syms_tail, *lazy_head;
+static struct elf_check_fields elf_fields;
 static char *env_path, *sys_path;
 static unsigned long long gencnt;
 static int runtime;
@@ -684,6 +693,19 @@ static void unmap_library(struct dso *dso)
 	}
 }
 
+static int verify_elf_magic(const Ehdr* eh) {
+	return eh->e_ident[0] == ELFMAG0 &&
+		eh->e_ident[1] == ELFMAG1 &&
+		eh->e_ident[2] == ELFMAG2 &&
+		eh->e_ident[3] == ELFMAG3;
+}
+
+static int verify_elf_arch(const Ehdr* eh) {
+	return eh->e_machine == elf_fields.e_machine &&
+		eh->e_ident[EI_CLASS] == elf_fields.e_class &&
+		eh->e_ident[EI_DATA] == elf_fields.e_data;
+}
+
 static void *map_library(int fd, struct dso *dso)
 {
 	Ehdr buf[(896+sizeof(Ehdr))/sizeof(Ehdr)];
@@ -706,6 +728,8 @@ static void *map_library(int fd, struct dso *dso)
 	if (l<0) return 0;
 	if (l<sizeof *eh || (eh->e_type != ET_DYN && eh->e_type != ET_EXEC))
 		goto noexec;
+	if (!verify_elf_magic(eh)) goto noexec;
+	if (!verify_elf_arch(eh)) goto noexec;
 	phsize = eh->e_phentsize * eh->e_phnum;
 	if (phsize > sizeof buf - sizeof *eh) {
 		allocated_buf = malloc(phsize);
@@ -874,25 +898,45 @@ static int path_open(const char *name, const char *s, char *buf, size_t buf_size
 {
 	size_t l;
 	int fd;
+	const char *p;
 	for (;;) {
 		s += strspn(s, ":\n");
+		p = s;
 		l = strcspn(s, ":\n");
 		if (l-1 >= INT_MAX) return -1;
-		if (snprintf(buf, buf_size, "%.*s/%s", (int)l, s, name) < buf_size) {
-			if ((fd = open(buf, O_RDONLY|O_CLOEXEC))>=0) return fd;
-			switch (errno) {
-			case ENOENT:
-			case ENOTDIR:
-			case EACCES:
-			case ENAMETOOLONG:
-				break;
-			default:
-				/* Any negative value but -1 will inhibit
-				 * futher path search. */
-				return -2;
+		s += l;
+		if (snprintf(buf, buf_size, "%.*s/%s", (int)l, p, name) < buf_size) {
+			if ((fd = open(buf, O_RDONLY|O_CLOEXEC)) >= 0) {
+				Ehdr eh;
+				ssize_t n = pread(fd, &eh, sizeof(eh), 0);
+				/* If the elf file is invalid return -2 to
+				 * inhibit further search in load_library. */
+				if (n < 0 ||
+				    n != sizeof eh ||
+				    !verify_elf_magic(&eh)) {
+					close(fd);
+					return -2;
+				}
+				/* If the elf file has a valid header but is for
+				 * the wrong architecture ignore it and keep
+				 * searching the path list. */
+				if (verify_elf_arch(&eh))
+					return fd;
+				close(fd);
+			} else switch (errno) {
+				case ENOENT:
+				case ENOTDIR:
+				case EACCES:
+				case ENAMETOOLONG:
+					/* Keep searching in path list. */
+					continue;
+				default:
+					/* Any negative value but -1 will
+					 * inhibit further path search in
+					 * load_library. */
+					return -2;
 			}
 		}
-		s += l;
 	}
 }
 
@@ -1732,6 +1776,9 @@ hidden void __dls2(unsigned char *base, size_t *sp)
 	ldso.phnum = ehdr->e_phnum;
 	ldso.phdr = laddr(&ldso, ehdr->e_phoff);
 	ldso.phentsize = ehdr->e_phentsize;
+	elf_fields.e_machine = ehdr->e_machine;
+	elf_fields.e_class = ehdr->e_ident[EI_CLASS];
+	elf_fields.e_data = ehdr->e_ident[EI_DATA];
 	search_vec(auxv, &ldso_page_size, AT_PAGESZ);
 	kernel_mapped_dso(&ldso);
 	decode_dyn(&ldso);
