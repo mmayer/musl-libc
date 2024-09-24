@@ -893,7 +893,7 @@ error:
 	return 0;
 }
 
-static int path_open_library(const char *name, const char *s, char *buf, size_t buf_size)
+static int path_open(const char *name, const char *s, char *buf, size_t buf_size)
 {
 	size_t l;
 	int fd;
@@ -1163,12 +1163,12 @@ static struct dso *load_library(const char *name, struct dso *needed_by)
 		}
 		if (strlen(name) > NAME_MAX) return 0;
 		fd = -1;
-		if (env_path) fd = path_open_library(name, env_path, buf, sizeof buf);
+		if (env_path) fd = path_open(name, env_path, buf, sizeof buf);
 		for (p=needed_by; fd == -1 && p; p=p->needed_by) {
 			if (fixup_rpath(p, buf, sizeof buf) < 0)
 				fd = -2; /* Inhibit further search. */
 			if (p->rpath)
-				fd = path_open_library(name, p->rpath, buf, sizeof buf);
+				fd = path_open(name, p->rpath, buf, sizeof buf);
 		}
 		if (fd == -1) {
 			if (!sys_path) {
@@ -1207,7 +1207,7 @@ static struct dso *load_library(const char *name, struct dso *needed_by)
 				}
 			}
 			if (!sys_path) sys_path = "/lib:/usr/local/lib:/usr/lib";
-			fd = path_open_library(name, sys_path, buf, sizeof buf);
+			fd = path_open(name, sys_path, buf, sizeof buf);
 		}
 		pathname = buf;
 	}
