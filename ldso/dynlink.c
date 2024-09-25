@@ -919,11 +919,9 @@ static int path_open(const char *name, const char *s, char *buf, size_t buf_size
 				/* If the elf file has a valid header but is for
 				 * the wrong architecture ignore it and keep
 				 * searching the path list. */
-				if (!verify_elf_arch(&eh)) {
-					close(fd);
-					continue;
-				}
-				return fd;
+				if (verify_elf_arch(&eh))
+					return fd;
+				close(fd);
 			} else switch (errno) {
 				case ENOENT:
 				case ENOTDIR:
