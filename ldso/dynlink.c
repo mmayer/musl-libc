@@ -905,9 +905,26 @@ static int path_open(const char *name, const char *s, char *buf, size_t buf_size
 		if (l-1 >= INT_MAX) return -1;
 		s += l;
 		if (snprintf(buf, buf_size, "%.*s/%s", (int)l, p, name) < buf_size) {
-			fd = open(buf, O_RDONLY|O_CLOEXEC);
-			if (fd < 0) {
-				switch (errno) {
+			if ((fd = open(buf, O_RDONLY|O_CLOEXEC)) >= 0) {
+				Ehdr eh;
+				ssize_t n = pread(fd, &eh, sizeof(eh), 0);
+				/* If the elf file is invalid return -2 to
+				 * inhibit further search in load_library. */
+				if (n < 0 ||
+				    n != sizeof eh ||
+				    !verify_elf_magic(&eh)) {
+					close(fd);
+					return -2;
+				}
+				/* If the elf file has a valid header but is for
+				 * the wrong architecture ignore it and keep
+				 * searching the path list. */
+				if (!verify_elf_arch(&eh)) {
+					close(fd);
+					continue;
+				}
+				return fd;
+			} else switch (errno) {
 				case ENOENT:
 				case ENOTDIR:
 				case EACCES:
@@ -919,26 +936,7 @@ static int path_open(const char *name, const char *s, char *buf, size_t buf_size
 					 * inhibit further path search in
 					 * load_library. */
 					return -2;
-				}
 			}
-			Ehdr eh;
-			ssize_t n = pread(fd, &eh, sizeof(eh), 0);
-			/* If the elf file is invalid return -2 to inhibit
-			 * further path search in load_library. */
-			if (n < 0 ||
-			    n != sizeof eh ||
-			    !verify_elf_magic(&eh)) {
-				close(fd);
-				return -2;
-			}
-			/* If the elf file has a valid header but is for the
-			 * wrong architecture ignore it and keep searching the
-			 * path list. */
-			if (!verify_elf_arch(&eh)) {
-				close(fd);
-				continue;
-			}
-			return fd;
 		}
 	}
 }
