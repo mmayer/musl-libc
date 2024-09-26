@@ -702,7 +702,8 @@ static int verify_elf_magic(const Ehdr* eh) {
 
 static int verify_elf_arch(const Ehdr* eh) {
 	return eh->e_machine == elf_fields.e_machine &&
-		eh->e_ident[EI_CLASS] == elf_fields.e_class;
+		eh->e_ident[EI_CLASS] == elf_fields.e_class &&
+		eh->e_ident[EI_DATA] == elf_fields.e_data;
 }
 
 static void *map_library(int fd, struct dso *dso)
@@ -1777,6 +1778,7 @@ hidden void __dls2(unsigned char *base, size_t *sp)
 	ldso.phentsize = ehdr->e_phentsize;
 	elf_fields.e_machine = ehdr->e_machine;
 	elf_fields.e_class = ehdr->e_ident[EI_CLASS];
+	elf_fields.e_data = ehdr->e_ident[EI_DATA];
 	search_vec(auxv, &ldso_page_size, AT_PAGESZ);
 	kernel_mapped_dso(&ldso);
 	decode_dyn(&ldso);
